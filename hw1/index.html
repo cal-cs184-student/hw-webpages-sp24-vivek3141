@@ -1,7 +1,600 @@
-<html>
-	<head>
-	</head>
-	<body>
-		Homework 1 index.html here
-	</body>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+  <style>
+    body {
+      padding: 100px;
+      width: 1000px;
+      margin: auto;
+      text-align: left;
+      font-weight: 300;
+      font-family: 'Open Sans', sans-serif;
+      color: #121212;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      font-family: 'Source Sans Pro', sans-serif;
+    }
+  </style>
+  <title>CS 184/284A Rasterizer</title>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+  <link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet">
+
+  <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+  </script>
+  <script src="https://cdn.jsdelivr.net/gh/google/code-prettify@master/loader/run_prettify.js"></script>
+
+</head>
+
+
+<body>
+  <!-- https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_filter_anisotropic.txt -->
+  <h1 align="middle">CS 184/284A: Computer Graphics and Imaging, Spring 2024</h1>
+  <h1 align="middle">Homework 1: Rasterizer</h1>
+  <h2 align="middle">Vivek Verma</h2>
+
+  <br><br>
+
+  <div>
+
+    <h2 align="middle">Overview</h2>
+    <p>In this project, we implement a basic rasterizer. We utilize several sampling techniques, such as multi-sampling
+      for anti-aliasing, and mipmaps for texture sampling. In addition, we implement various other strategies, such as
+      jittered sampling or anistropic filtering and compare the results between various methods. Lastly, we consider
+      optimizations such as multi-threading with mutual exclusion in order to speed up rendering.</p>
+
+    <h2 align="middle">Section I: Rasterization</h2>
+
+    <h3 align="middle">Part 1: Rasterizing single-color triangles</h3>
+    <p>In order to rasterize a single-color triangle, we first explore the idea of barycentric coordinates. Given a
+      triangle with vertices \(v_0, v_1, v_2\), we can express any point \(p\) within the triangle as a linear
+      combination of the vertices. That is, we can write \(p = \alpha v_0 + \beta v_1 + \gamma v_2\), where \(\alpha +
+      \beta + \gamma = 1\).</p>
+    <center>
+      <img src="images/barycentric.png" align="middle" width="400px" />
+      <figcaption align="middle">Barycentric coordinates can be interpreted as the distances from the vectices of the
+        triangle to the average of all three vertices. So in the case where \(\alpha = \beta = \gamma = \frac{1}{3}\),
+        the point \(p\) is the average of the three vertices. <a
+          href="https://girlsangle.wordpress.com/2011/08/19/barycentric-coordinates/">Image Source.</a>
+      </figcaption>
+    </center>
+    <p>Given a point \(p\), we can determine the barycentric coordinates \(\alpha, \beta, \gamma\) by solving the
+      following system of equations:</p>
+    \[
+    \begin{align*}
+    p &= \alpha v_0 + \beta v_1 + \gamma v_2 \\
+    1 &= \alpha + \beta + \gamma
+    \end{align*}
+    \]
+    <p>Once we have the barycentric coordinates, we can determine whether the point \(p\) is within the triangle by
+      checking if \(\alpha, \beta, \gamma \geq 0\). Due to floating point precision errors, we choose a value \(
+      \epsilon = 10^{-6} \) and check if \( \alpha, \beta, \gamma \geq \epsilon \). Given this way of determining
+      whether a point is in a triangle, in order to render it, we simply iterate through the entire bounding box of the
+      triangle, defined as the minimum and maximum x and y coordinates of the triangle, and check whether each point is
+      within the triangle. If it is, we color it with the color of the triangle.</p>
+    <p>Let the coordates of the triangle be \( (x_1, y_1), (x_2, y_2), (x_3, y_3) \). Solving the system above, we can
+      get a closed form solution for computing the barycentric coordinates \( \alpha, \beta, \gamma \) as follows:</p>
+    \[
+    \begin{align*}
+    \alpha &= \frac{(y_2 - y_3)(x - x_3) + (x_3 - x_2)(y - y_3)}{(y_2 - y_3)(x_1 - x_3) + (x_3 - x_2)(y_1 - y_3)} \\
+    \beta &= \frac{(y_3 - y_1)(x - x_3) + (x_1 - x_3)(y - y_3)}{(y_2 - y_3)(x_1 - x_3) + (x_3 - x_2)(y_1 - y_3)} \\
+    \gamma &= 1 - \alpha - \beta
+    \end{align*}
+    \]
+    <p>Given that computing \( \alpha, \beta, \gamma \) is \( O(1) \) given the triangle coordinates, the time
+      complexity of rendering a single triangle is \( O(\text{width} \cdot \text{height}) \), where \( \text{width} \)
+      and \( \text{height} \) are the dimensions of the bounding box of the triangle, since we iterate through the
+      entire bounding
+      box of the triangle and check whether each point is within the triangle.</p>
+    <p>We apply this algorithm to get the following results:</p>
+    <!--create a 2x2 grid of images/1_basic3.png to images/1_basic6.png-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/1_basic3.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test3.svg. Although the triangles are rendering well, there is
+              noticable aliasing around the borders.</figcaption>
+          </td>
+          <td>
+            <img src="images/1_basic4.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test4.svg. There are clear jaggies present in this image.
+            </figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <h3 align="middle">Extra Credit: Triangle Optimization</h3>
+    <p>In order to optimize triangle rendering we consider a couple steps. First, we compute the constants used
+      throughout the iteration through the bounding box prior to the loop in order to factor out redundant computation.
+      We do the same for the bounding box, pre-computing it prior to entering the loop. Lastly, we use the OpenMP API to
+      parallelize the loop, using mutual exclusion to prevent a race condition with the sample buffer. Putting all of
+      these together, gives us the following code:</p>
+    <pre class="prettyprint">
+      // Optimized
+      float sqrtSampleRate = sqrt(sample_rate);
+      x0 *= sqrtSampleRate;
+      y0 *= sqrtSampleRate;
+      x1 *= sqrtSampleRate;
+      y1 *= sqrtSampleRate;
+      x2 *= sqrtSampleRate;
+      y2 *= sqrtSampleRate;
+  
+      float minX = min(x0, min(x1, x2)), maxX = max(x0, max(x1, x2));
+      float minY = min(y0, min(y1, y2)), maxY = max(y0, max(y1, y2));
+  
+      int floorMinX = floor(minX), ceilMaxX = ceil(maxX);
+      int floorMinY = floor(minY), ceilMaxY = ceil(maxY);
+      int widthScaled = width * sqrtSampleRate; 
+  
+  #pragma omp parallel for collapse(2) private(x, y)
+      for (int x = floorMinX; x <= ceilMaxX; x++) {
+        for (int y = floorMinY; y <= ceilMaxY; y++) {
+          // Barycentric coordinates
+          vector<double> bary =
+              get_barycentric_coordinates(x0, y0, x1, y1, x2, y2, x, y);
+          double alpha = bary[0], beta = bary[1], gamma = bary[2];
+  
+          if (alpha >= -EPS && beta >= -EPS && gamma >= -EPS) {
+  #pragma omp critical
+            sample_buffer[y * widthScaled + x] = color;
+          }
+        }
+      }
+    </pre>
+    Rendering basic/test3.svg without any optimizations yields a render time of 13.8 ms, while the optimized version
+    yields a render time of 11.7 ms, a 15.2% improvement!
+
+    <h3 align="middle">Part 2: Antialiasing triangles</h3>
+    <p>To prevent aliasing, we first examine implementing supersampling. Supersampling is a technique where we render
+      the image at a higher resolution and then downsample it to the desired resolution. This allows us to capture more
+      detail in the image and prevent aliasing. We first consider a sample rate \( n \), which is a perfect square. This
+      allows us to create a sample buffer of size \( n \cdot \text{width} \cdot \text{height} \), giving each pixel \( n
+      \) samples to
+      average over. We then iterate through the sample buffer, rendering the triangle at each sample point, which we
+      define evenly spaced
+      within the pixel. We then average the color of the triangle at each sample point and set the pixel to that color.
+    </p>
+    <p>In order to implement it, we start by making sure that our sample buffer is always of size \( n \cdot
+      \text{width} \cdot \text{height} \). This can be accomplished by modifying the constructer
+      RasterizerImp::RasterizerImp, and functions set_sample_rate, set_framebuffer_target to resize the sample buffer
+      accordingly. Then, we fill up the sample buffer in rasterize_triangle by iterating through
+      the width and height, then iterating through a square of size \( \sqrt{n} \times \sqrt{n} \). Given height and
+      width coordinates \(x, y\) and sample coordinates \(i, j\), we can compute the index into the sample buffer via
+      the formula \( y \cdot \text{width} \cdot n + x \cdot \sqrt{n} + j \cdot \sqrt{n} + i \). Then, in
+      resolve_to_framebuffer, we simply iterate through the height and width and average out all the samples in the
+      the pixel. This gives us the following results:</p>
+    <!-- create 2x2 grid with images 2_basic4_{1, 4, 9, 16}.png-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/2_basic4_1.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test4.svg with a sample rate of 1. There are clear jaggies
+              present in this image.</figcaption>
+          </td>
+          <td>
+            <img src="images/2_basic4_4.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test4.svg with a sample rate of 4. There is a noticeable
+              improvement in the quality of the image.</figcaption>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <img src="images/2_basic4_9.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test4.svg with a sample rate of 9. The image is even more
+              improved.</figcaption>
+          </td>
+          <td>
+            <img src="images/2_basic4_16.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test4.svg with a sample rate of 16. The image is almost
+              indistinguishable from the original.</figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <p>Multi-sampling as a method for anti-aliasing works as it is equivalent to using a box filter over a higher
+      resolution image. From the convolution theorem, we know that a box filter in the spatial domain is equivalent to
+      a sinc filter in the frequency domain. This means that multi-sampling is equivalent to applying a sinc filter to
+      the image, which is a low-pass filter. As such, we are removing high frequency components from the image, which
+      are the root cause of aliasing. </p>
+
+    <h3 align="middle">Extra Credit: Jittered Sampling</h3>
+    <p>Another way to prevent aliasing is with jittered sampling. Jittered sampling, similar to supersampling works by
+      creating a grid of size \( \sqrt{n} \times \sqrt{n} \) within the pixel, where \( n \) is the sample size.
+      However, insteasd of sampling and averaging the points within each grid, we simply choose a random point within
+      each grid then average out the samples.</p>
+    <center>
+      <img src="images/jittered.png" align="middle" width="400px" />
+      <figcaption align="middle">(a) 16 jittered samples with \(x-\) and \(y-\)projections; (b) 256 jittered samples. <a
+          href="https://web.cs.wpi.edu/~emmanuel/courses/cs563/S10/talks/wk3_p1_wadii_sampling_techniques.pdf">Source.</a>
+      </figcaption>
+    </center>
+    <p>Implementing it only requires a small modification to the supersampling algorithm. We simply choose a random
+      point within each grid and average the samples. First, we examine the results with a sample rate of \(1\):</p>
+    <!--create a 1x2 grid-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/2_jitter_demo_msaa.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of the straight edge of the blue triangle of basic/test4.svg with
+              multisampling.
+            </figcaption>
+          </td>
+          <td>
+            <img src="images/2_jitter_demo_jitter.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of the straight edge of the blue triangle of basic/test4.svg with
+              Jittered sampling.</figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <p>The above images illustrate the random nature of jittered sampling. The first image is the result of
+      multi-sampling, while the second image is the result of jittered sampling. Given that we are sampling random
+      points within the pixel, there is some probability that the pixels around the edge that "contain" the edge, that
+      are always rendered blue with multisampling are not rendered with jittered sampling. As such, we observe a pattern
+      where
+      the straight edges around the triangle also suffer from aliasing, wheras this phenomenon is not observed with
+      multisampling. We now examine comparisons between jittered sampling and multisampling:</p>
+    <!--create a 1x2 grid-->
+    <!--create a 1x2 grid-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/2_test5_msaa.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test5.svg with multisampling and a sample rate of 16.
+            </figcaption>
+          </td>
+          <td>
+            <img src="images/2_test5_jitter.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of basic/test5.svg with jittered sampling and a sample rate of 16.
+          </td>
+        </tr>
+      </table>
+    </div>
+    <p>We note that the two images are almost indistinguishable. This is likely due to the fact that we are taking 16
+      samples, which is a large enough sample size to average out the random noise. As such, we can conclude that
+      jittered sampling is a viable method for anti-aliasing. </p>
+    <h3 align="middle">Part 3: Transforms</h3>
+    <p>In order to implement transformations, we simply define matrices for transforms translate, scale, rotate as
+      follows:</p>
+    \[
+    \begin{align*}
+    \text{translate}(x, y) &= \begin{bmatrix} 1 & 0 & x \\ 0 & 1 & y \\ 0 & 0 & 1 \end{bmatrix} \\
+    \text{scale}(x, y) &= \begin{bmatrix} x & 0 & 0 \\ 0 & y & 0 \\ 0 & 0 & 1 \end{bmatrix} \\
+    \text{rotate}(\theta) &= \begin{bmatrix} \cos(\theta) & -\sin(\theta) & 0 \\ \sin(\theta) & \cos(\theta) & 0 \\ 0
+    & 0 & 1 \end{bmatrix}
+    \end{align*}
+    \]
+    <p>Then, we are able to render robot.svg. We also define a file my_robot.svg, that attempts to show the robot
+      leaning over and attempting to wave. The results can be seen below:</p>
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/3_robot.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of robot.svg. The robot is standing upright.</figcaption>
+          </td>
+          <td>
+            <img src="images/3_my_robot.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of my_robot.svg. The robot is leaning over and attempting to wave.
+            </figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <h3 align="middle">Extra Credit: Rotation GUI Feature</h3>
+    <p>In this section, we implement a GUI feature where one can press the 'R' key and rotate the image 45 degrees. In
+      order to do so, we first add an extra statement to the switch case in drawrend.cpp with the 'R' character. Then,
+      we can add the following code:</p>
+    <pre class="prettyprint">
+ndc_to_screen =
+translate((int)(width / 2.0f), (int)(height / 2.0f)) * rotate(45) *
+translate(-(int)(width / 2.0f), -(int)(height / 2.0f)) * ndc_to_screen;
+redraw();
+      </pre>
+    <p>Since the top left of the screen is the coordinate (0, 0), we first translate the image so that the center of
+      the image is at the origin. Then, we rotate the image 45 degrees. Lastly, we translate the image back to the
+      original position. This gives us the following results:</p>
+    <!--create 1x2 files are 3_rotate_before.png and 3_rotate_after.png-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/3_rotate_before.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of texmap/test1.svg before the rotation.
+            </figcaption>
+          </td>
+          <td>
+            <img src="images/3_rotate_after.png" align="middle" width="400px" />
+            <figcaption align="middle">A render of texmap/test1.svg after the rotation. The image is now rotated 45
+              degrees.
+            </figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <h2 align="middle">Section II: Sampling</h2>
+    <h3 align="middle">Part 4: Barycentric coordinates</h3>
+    <p>Given a
+      triangle with vertices \(v_0, v_1, v_2\), we can express any point \(p\) within the triangle as a linear
+      combination of the vertices. That is, we can write \(p = \alpha v_0 + \beta v_1 + \gamma v_2\), where \(\alpha +
+      \beta + \gamma = 1\).</p>
+    <center>
+      <img src="images/barycentric.png" align="middle" width="400px" />
+      <figcaption align="middle">Barycentric coordinates can be interpreted as the distances from the vectices of the
+        triangle to the average of all three vertices. So in the case where \(\alpha = \beta = \gamma = \frac{1}{3}\),
+        the point \(p\) is the average of the three vertices. <a
+          href="https://girlsangle.wordpress.com/2011/08/19/barycentric-coordinates/">Image Source.</a>
+      </figcaption>
+    </center>
+    <p>Given a point \(p\), we can determine the barycentric coordinates \(\alpha, \beta, \gamma\) by solving the
+      following system of equations:</p>
+    \[
+    \begin{align*}
+    p &= \alpha v_0 + \beta v_1 + \gamma v_2 \\
+    1 &= \alpha + \beta + \gamma
+    \end{align*}
+    \]
+    <p>Let the coordates of the triangle be \( (x_1, y_1), (x_2, y_2), (x_3, y_3) \). Solving the system above, we can
+      get a closed form solution for computing the barycentric coordinates \( \alpha, \beta, \gamma \) as follows:</p>
+    \[
+    \begin{align*}
+    \alpha &= \frac{(y_2 - y_3)(x - x_3) + (x_3 - x_2)(y - y_3)}{(y_2 - y_3)(x_1 - x_3) + (x_3 - x_2)(y_1 - y_3)} \\
+    \beta &= \frac{(y_3 - y_1)(x - x_3) + (x_1 - x_3)(y - y_3)}{(y_2 - y_3)(x_1 - x_3) + (x_3 - x_2)(y_1 - y_3)} \\
+    \gamma &= 1 - \alpha - \beta
+    \end{align*}
+    \]
+    <p>Given the barycentric coordinates \(\alpha, \beta, \gamma\) of a point in a triangle, and the colors \(c_0, c_1,
+      c_2\) of the vertices of the triangle, we can compute the color of a point within the triangle as \(c = \alpha c_0
+      + \beta c_1 + \gamma c_2\). This is the basis for texture mapping, which we will explore in the next section.</p>
+    <center>
+      <img src="images/4_illustration.png" align="middle" width="400px" />
+      <figcaption align="middle">An illustration of barycentric coordinates. We define three coordinates to form a
+        triangle, and set their colors to be red, green and blue. We then use barycentric coordinates as weights on the
+        colors of the vertices in order to interpolate colors within the triangles.</figcaption>
+    </center>
+    <p>We then apply the algorithm to test7.svg to get the following result:</p>
+    <center>
+      <img src="images/4_test7.png" align="middle" width="400px" />
+      <figcaption align="middle">A render of test7.svg. The colors are interpolated within the triangle.</figcaption>
+    </center>
+    <h3 align="middle">Part 5: "Pixel sampling" for texture mapping</h3>
+    <p>Now we move to rendering textures on triangles. We are given a map between the texture coordinates and the
+      vertices of the triangle. We can then use the barycentric coordinates of a point within the triangle to
+      interpolate the texture coordinates of the point. We then use the texture coordinates to sample the texture at the
+      point.</p>
+    <p>Given a texture coordinate in \(uv\) space, we need to map it to the texture space. We implement two ways of
+      doing this: nearest neighbor and bilinear interpolation. Nearest neighbor simply rounds the texture coordinate to
+      the nearest integer and samples the texture at that point. Bilinear interpolation, on the other hand, takes the
+      four nearest points to the texture coordinate and interpolates the color based on the distance to the four points.
+    </p>
+    <p>We implement this and examine the results below on texmap/test1.svg:</p>
+    <!--create a 2x2 grid with files 5_bilinear/nearest_1/16.png-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/5_nearest_1.png" align="middle" width="400px" />
+            <figcaption align="middle">Nearest Neighbor with 1x MSAA</figcaption>
+          </td>
+          <td>
+            <img src="images/5_bilinear_1.png" align="middle" width="400px" />
+            <figcaption align="middle">Bilinear with 1x MSAA</figcaption>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <img src="images/5_nearest_16.png" align="middle" width="400px" />
+            <figcaption align="middle">Nearest Neighbour with 16xMSAA</figcaption>
+          </td>
+          <td>
+            <img src="images/5_bilinear_16.png" align="middle" width="400px" />
+            <figcaption align="middle">Biliear with 16xMSAA</figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <p>The differences between nearest neighbour and bilinear interpolation are especially apparent when there are
+      large
+      differences in texture scaling. For textures that need to be magnified, bilinear interpolation often provides a
+      smoother and more visually appealing result, whereas nearest neighbor interpolation can make the pixelated
+      structure
+      more evident, which might be undesirable in high-quality renderings. In contrast, for applications where
+      preserving
+      the original pixelated look is important (e.g., retro pixel art games), nearest neighbor might be the preferred
+      choice. The choice between these methods depends on the desired balance between visual quality and performance.
+    </p>
+    <h3 align="middle">Part 6: "Level sampling" with mipmaps for texture mapping</h3>
+    <p>Level sampling is a technique used to sample textures at different levels of detail. This is useful when
+      rendering textures at different scales, as it allows us to sample the texture at a level of detail that is
+      appropriate for the scale of the texture. We implement this by creating a mipmap, which is a set of textures at
+      different levels of detail. We then use the barycentric coordinates of a point within the triangle to interpolate
+      the texture coordinates of the point. We then use the texture coordinates to sample the texture at the point. We
+      then use the level of detail to sample the texture at the appropriate level of detail. We then use the texture
+      coordinates to sample the texture at the point. We then use the level of detail to sample the texture at the
+      appropriate level of detail. We then use the texture coordinates to sample the texture at the point.</p>
+    <p>In order to compute the level, we are required to compute the partial derivatives \( {\partial u}/{\partial x},
+      {\partial u}/{\partial y}, {\partial v}/{\partial x}, {\partial v}/{\partial y} \). The level is then given by the
+      formula:</p>
+    \[ \text{level} = \log_2 \max \{ \sqrt{{\partial u}/{\partial x}^2 + {\partial v}/{\partial
+    x}^2}, \sqrt{{\partial u}/{\partial y}^2 + {\partial
+    v}/{\partial y}^2} \} \]
+    <p>Given the level, we implement two methods of recovering the texture. The first, is rounding to the nearest
+      integer and pulling the texture from that mipmap level. The second, is linearly interpolating between the two
+      nearest mipmap levels. For instance, if I had mipmap level \(l\) with a mipmap map \(M\), I would compute the
+      texture at \((u, v)\) with the formula</p>
+    \[M_l(u, v) = (1 - \alpha) M_{\lfloor l \rfloor}(u, v) + \alpha M_{\lceil l
+    \rceil}(u, v)\]
+    <p>where \(\alpha\) is the fractional
+      part of the level.
+    <p>Adjusting texture sampling techniques—through pixel sampling, level sampling, or varying the number of samples
+      per pixel—presents a trade-off between rendering speed, memory usage, and anti-aliasing effectiveness. Increasing
+      pixel sampling rates or the number of samples per pixel generally leads to higher image quality but at the cost of
+      reduced rendering speed and potentially higher memory consumption, especially when employing multisample
+      anti-aliasing methods. Conversely, level sampling, which utilizes mipmaps, can enhance speed and anti-aliasing by
+      selecting appropriate texture resolutions but requires additional memory to store the mipmaps.</p>
+    <p>We now apply the three degrees of freedom with the following texture:</p>
+    <center>
+      <img src="images/painting_tree.jpg" align="middle" width="400px" />
+      <figcaption align="middle">The texture used for texting mipmaps.
+      </figcaption>
+    </center>
+    <p>We examine the results below:</p>
+    <!--create a 2x2 grid with files 6_{zero,near}_{near,linear}.png-->
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/6_zero_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Zero Mipmap, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_zero_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Zero Mipmap, Bilinear</figcaption>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <img src="images/6_near_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Nearest Mipmap, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_near_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Nearest Mipmap, Bilinear</figcaption>
+          </td>
+        </tr>
+        <!--create one with 6_linear_near and 6_linear_linear-->
+        <tr>
+          <td>
+            <img src="images/6_linear_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Linearly interpolated Mipmap, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_linear_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Linearly interpolated Mipmap, Bilinear</figcaption>
+          </td>
+      </table>
+    </div>
+    <p>We observe that using mipmaps can significantly improve the quality of texture rendering, especially when
+      rendering textures at different scales. The choice between nearest neighbor and bilinear interpolation depends on
+      the desired balance between visual quality and performance. Nearest neighbor interpolation can make the pixelated
+      structure more evident, which might be undesirable in high-quality renderings. In contrast, bilinear interpolation
+      often provides a smoother and more visually appealing result, especially when rendering textures at different
+      scales. The choice between these methods depends on the desired balance between visual quality and performance.
+    </p>
+    <h3 align="middle">Extra Credit: Anisotropic Filtering</h3>
+    <p>In this section, we implement anisotropic filtering. The primary source used was <a
+        href="https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_filter_anisotropic.txt">this</a> spec,
+      provided by NVIDIA.</p>
+    <p>Anisotropic filtering is a method of enhancing the image quality of textures on surfaces that are at oblique
+      viewing angles with respect to the camera. It does this by taking into account the direction of the surface with
+      respect to the camera and adjusting the texture sampling accordingly. This is especially useful for surfaces that
+      are at oblique angles with respect to the camera, as it can help to reduce the blurring and distortion that can
+      occur when using standard texture filtering methods.</p>
+    <p>The implementation details are as follows. First, we compute approximations of partial derivatives \(
+      \frac{\partial
+      u}{\partial x}, \frac{\partial u}{\partial y}, \frac{\partial v}{\partial x}, \frac{\partial v}{\partial y} \).
+      We then compute the anisotropy ratio, which is given by the formula:</p>
+    \[ \text{anisotropy} = \frac{\max \{ \sqrt{{\partial u}/{\partial x}^2 + {\partial v}/{\partial x}^2},
+    \sqrt{{\partial
+    u}/{\partial y}^2 + {\partial v}/{\partial y}^2} \}}{\min \{ \sqrt{{\partial u}/{\partial x}^2 + {\partial
+    v}/{\partial
+    x}^2}, \sqrt{{\partial u}/{\partial y}^2 + {\partial v}/{\partial y}^2} \}} \]
+    <p>We clamp the anisotropy ratio between 1 and 10 in this implementation. We then compute the level, \( \lambda \),
+      given by:</p>
+    \[
+    \lambda = \log_2 \left( {\text{anisotropy} \over \max \{ \sqrt{{\partial u}/{\partial x}^2 + {\partial v}/{\partial
+    x}^2},
+    \sqrt{{\partial u}/{\partial y}^2 + {\partial v}/{\partial y}^2} \} } \right)
+    \]
+    <p>Finally, we can compute the texture sampled with anisotropic filtering, \( \tau_{\text{aniso}}(u, v) \). If \(
+      \sqrt{{\partial u}/{\partial x}^2 + {\partial v}/{\partial x}^2} >
+      \sqrt{{\partial u}/{\partial y}^2 + {\partial v}/{\partial y}^2} \), we compute the texture as:</p>
+    \[
+    \tau_{\text{aniso}} = {1 \over N} \sum_{i=1}^{N} \tau \left( u(x, y) + {\partial u \over \partial x} \left({ i \over
+    N + 1}
+    - {1 \over 2} \right), v(x, y) + {\partial v \over \partial x} \left({ i \over N + 1} - {1 \over 2} \right) \right)
+    \]
+    <p>Otherwise, we compute the texture as:</p>
+    \[
+    \tau_{\text{aniso}} = {1 \over N} \sum_{i=1}^{N} \tau \left( u(x, y) + {\partial u \over \partial y} \left({ i \over
+    N + 1}
+    - {1 \over 2} \right), v(x, y) + {\partial v \over \partial y} \left({ i \over N + 1} - {1 \over 2} \right) \right)
+    \]
+    <p>We then apply the algorithm to the previous texture and examine the results below:
+
+    <div align="middle">
+      <table style="width:100%">
+        <tr>
+          <td>
+            <img src="images/6_zero_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Zero Mipmap, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_zero_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Zero Mipmap, Bilinear</figcaption>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <img src="images/6_near_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Nearest Mipmap, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_near_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Nearest Mipmap, Bilinear</figcaption>
+          </td>
+        </tr>
+        <!--create one with 6_linear_near and 6_linear_linear-->
+        <tr>
+          <td>
+            <img src="images/6_linear_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Linearly interpolated Mipmap, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_linear_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Linearly interpolated Mipmap, Bilinear</figcaption>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <img src="images/6_aniso_near.png" align="middle" width="400px" />
+            <figcaption align="middle">Anisotropic Filtering, Nearest Neighbor</figcaption>
+          </td>
+          <td>
+            <img src="images/6_aniso_linear.png" align="middle" width="400px" />
+            <figcaption align="middle">Anisotropic Filtering, Bilinear</figcaption>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <p>Evidently, anisotropic filtering seems to give the best results, especially when rendering textures at different
+      scales. It can help to reduce the blurring and distortion that can occur when using standard texture filtering
+      methods. The choice between nearest neighbor and bilinear interpolation depends on the desired balance between
+      visual quality and performance. Nearest neighbor interpolation can make the pixelated structure more evident while
+      bilinear interpolation often provides a smoother and more visually appealing result.</p>
+    <h2 align="middle">Section III: Art Competition</h2>
+    <h3 align="middle">Part 7: Draw something interesting!</h3>
+    <p>For this part, I drew Newton's Fractal:</p>
+    <center>
+      <img src="images/newton_fractal.png" align="middle" width="400px" />
+      <figcaption align="middle">Newton's Fractal</figcaption>
+    </center>
+    <p>Newton's Fractal is generated by examining Newton's Method, a root finding algorithm. We start with a complex
+      function \( f(z) \) and an initial guess \( z_0 \). We then iterate through the following formula:</p>
+    \[ z_{n+1} = z_n - \frac{f(z_n)}{f'(z_n)} \]
+    <p>where \( f'(z) \) is the derivative of \( f(z) \). We then color the pixels based on the root that the initial
+      guess converges to. The result is a beautiful fractal that is generated by the roots of the function \( f(z) = z^3
+      - 1 \).</p>
+    <p>To generate the SVG file, I wrote a python script that iterates through the pixels and colors them based on the
+      root that the initial guess converges to.</p>
+</body>
+
 </html>
